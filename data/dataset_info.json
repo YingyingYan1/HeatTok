@@ -1,0 +1,18 @@
+{
+  "EarthVQA_train": {
+    "file_name": "EarthVQA.jsonl",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "images": "images"
+    }
+  },
+  "VRSBench": {
+    "file_name": "vrsbench.jsonl",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "images": "images"
+    }
+  }
+}

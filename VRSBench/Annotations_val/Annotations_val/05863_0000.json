@@ -1,0 +1,59 @@
+{
+    "caption": "The image provided originates from GoogleEarth and features arid terrain with visible landforms and erosion patterns. A single windmill is present in the image, located towards the right side of the frame surrounded by the textured landscape.",
+    "objects": [
+        {
+            "obj_id": 0,
+            "referring_sentence": "The solitary windmill in the image is positioned towards the right edge of the frame.",
+            "obj_cls": "windmill",
+            "obj_corner": [
+                0.80078125,
+                0.25,
+                0.994140625,
+                0.25,
+                0.994140625,
+                0.330078125,
+                0.80078125,
+                0.330078125
+            ],
+            "obj_coord": [
+                0.8,
+                0.25,
+                0.99,
+                0.33
+            ],
+            "is_unique": true,
+            "obj_position": "right",
+            "obj_rel_position": "",
+            "obj_size": "",
+            "obj_rel_size": "",
+            "flag": false
+        }
+    ],
+    "qa_pairs": [
+        {
+            "ques_id": 1,
+            "question": "What is the prominent man-made structure in the image?",
+            "answer": "Windmill",
+            "type": "object category"
+        },
+        {
+            "ques_id": 2,
+            "question": "What is the primary natural feature in the image?",
+            "answer": "Terrain",
+            "type": "object category"
+        },
+        {
+            "ques_id": 3,
+            "question": "Is the windmill located on the left or right side of the image?",
+            "answer": "Right",
+            "type": "object position"
+        },
+        {
+            "ques_id": 4,
+            "question": "Is the landscape in the image predominantly flat or rugged?",
+            "answer": "Rugged",
+            "type": "scene type"
+        }
+    ],
+    "image": "05863_0000.png"
+}

@@ -1,0 +1,86 @@
+{
+    "caption": "The image, sourced from GoogleEarth, shows a rural area with an expressway-toll-station situated at the center. Alongside the toll station, multiple small vehicles are visible, with one positioned on the middle-left and another that is the right-most in the center relative to the toll station.",
+    "objects": [
+        {
+            "obj_id": 0,
+            "referring_sentence": "The toll station is positioned at the center of the image.",
+            "obj_cls": "expressway-toll-station",
+            "obj_corner": [
+                0.451171875,
+                0.431640625,
+                0.591796875,
+                0.431640625,
+                0.591796875,
+                0.59375,
+                0.451171875,
+                0.59375
+            ],
+            "obj_coord": [
+                0.45,
+                0.43,
+                0.59,
+                0.59
+            ],
+            "is_unique": true,
+            "obj_position": "center",
+            "obj_rel_position": "",
+            "obj_size": "small",
+            "obj_rel_size": "",
+            "flag": false
+        },
+        {
+            "obj_id": 3,
+            "referring_sentence": "The right-most small vehicle is located near the center, to the right of the toll station.",
+            "obj_cls": "vehicle",
+            "obj_corner": [
+                0.580078125,
+                0.443359375,
+                0.6171875,
+                0.443359375,
+                0.6171875,
+                0.466796875,
+                0.580078125,
+                0.466796875
+            ],
+            "obj_coord": [
+                0.58,
+                0.44,
+                0.62,
+                0.47
+            ],
+            "is_unique": false,
+            "obj_position": "center",
+            "obj_rel_position": "right-most",
+            "obj_size": "small",
+            "obj_rel_size": "",
+            "flag": false
+        }
+    ],
+    "qa_pairs": [
+        {
+            "ques_id": 1,
+            "question": "What is the main structure in the center of the image?",
+            "type": "scene type",
+            "answer": "expressway-toll-station"
+        },
+        {
+            "ques_id": 2,
+            "question": "Are there any visible vehicles near the toll station?",
+            "type": "object existence",
+            "answer": "Yes"
+        },
+        {
+            "ques_id": 3,
+            "question": "How many expressway-toll-stations are visible in the image?",
+            "type": "object quantity",
+            "answer": "1"
+        },
+        {
+            "ques_id": 4,
+            "question": "Does the image show urban or rural setting?",
+            "type": "scene type",
+            "answer": "rural"
+        }
+    ],
+    "image": "00002_0000.png"
+}
