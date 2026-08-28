@@ -1688,43 +1688,6 @@ class Qwen2VLPlugin(BasePlugin):
                         combined_gaussian = torch.cat(all_gaussian_params, dim=0)
                         mm_inputs["image_patch_gaussians"] = combined_gaussian
 
-                    _heatok_quiet = os.environ.get("HEATTOK_QUIET", "0").strip().lower() in ("1", "true")
-                    if not getattr(self, "_semantic_selfcheck_logged", False):
-                        self._semantic_selfcheck_logged = True
-                        if not _heatok_quiet:
-                            total_global_tokens = int(sum(global_tokens_per_image))
-                            total_semantic_tokens = int(sum(semantic_tokens_per_image))
-                            pos_shape = tuple(mm_inputs["image_patch_positions"].shape) if "image_patch_positions" in mm_inputs else None
-                            ext_shape = tuple(mm_inputs["image_patch_extents"].shape) if "image_patch_extents" in mm_inputs else None
-                            ori_shape = tuple(mm_inputs["image_patch_orientations"].shape) if "image_patch_orientations" in mm_inputs else None
-                            print(
-                                f"[HeatTok SelfCheck] token split: global={total_global_tokens}, semantic={total_semantic_tokens}, "
-                                f"total={int(mm_inputs['image_tokens_per_image'].sum().item())}"
-                            )
-                            print(
-                                f"[HeatTok SelfCheck] tensor shapes: positions={pos_shape}, extents={ext_shape}, orientations={ori_shape}"
-                            )
-                            if "image_patch_orientations" in mm_inputs:
-                                ori = mm_inputs["image_patch_orientations"].float()
-                                eps = 1e-6
-                                # English comment.
-                                merge_square = getattr(image_processor, "merge_size", 2) ** 2
-                                g_patch_end = min(total_global_tokens * merge_square, ori.shape[0])
-                                s_patch_end = min(
-                                    (total_global_tokens + total_semantic_tokens) * merge_square,
-                                    ori.shape[0],
-                                )
-                                ori_global = ori[:g_patch_end]
-                                ori_semantic = ori[g_patch_end:s_patch_end]
-                                g_zero = int((ori_global.abs() <= eps).sum().item()) if ori_global.numel() > 0 else 0
-                                g_nonzero = int((ori_global.abs() > eps).sum().item()) if ori_global.numel() > 0 else 0
-                                s_zero = int((ori_semantic.abs() <= eps).sum().item()) if ori_semantic.numel() > 0 else 0
-                                s_nonzero = int((ori_semantic.abs() > eps).sum().item()) if ori_semantic.numel() > 0 else 0
-                                print(
-                                    f"[HeatTok SelfCheck] phi stats: "
-                                    f"global(phi=0:{g_zero}, phi!=0:{g_nonzero}), "
-                                    f"semantic(phi=0:{s_zero}, phi!=0:{s_nonzero})"
-                                )
                 except Exception as e:
                     # English comment.
                     from ..extras import logging

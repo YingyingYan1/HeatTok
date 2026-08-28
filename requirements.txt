@@ -1,0 +1,138 @@
+accelerate==1.11.0
+aiofiles==24.1.0
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.3
+aiosignal==1.4.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+antlr4-python3-runtime==4.9.3
+anyio==4.14.2
+attrs==26.1.0
+av==16.0.0
+brotli==1.2.0
+certifi==2026.7.22
+charset-normalizer==3.5.1
+click==8.4.2
+contourpy==1.3.3
+cycler==0.12.1
+datasets==4.0.0
+deepspeed==0.19.5
+dill==0.3.8
+docstring_parser==0.18.0
+einops==0.8.2
+fastapi==0.141.1
+ffmpy==1.0.0
+filelock==3.32.3
+fire==0.7.1
+flash-attn @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/flash_attn-2.7.2.post1%2Bcu11torch2.4cxx11abiFALSE-cp311-cp311-linux_x86_64.whl#sha256=5127904814a2862fb63964b548e9191410f4637f59f3997e4de2000d92a823b4
+fonttools==4.63.0
+frozenlist==1.8.0
+fsspec==2025.3.0
+gradio @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/gradio-5.50.0-py3-none-any.whl#sha256=d06770d57cdda9b703ef9cf767ac93a890a0e12d82679a310eef74203a3673f4
+gradio_client==1.14.0
+groovy==0.1.2
+h11==0.16.0
+hf-xet @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/hf_xet-1.6.0-cp38-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl#sha256=d62671bb130879cef0ee4c9ebe47a14af6c66ec53e6d84dc15936e5ffdfac82f
+hf_transfer @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/hf_transfer-0.1.9-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl#sha256=cdca9bfb89e6f8f281890cc61a8aff2d3cecaff7e1a4d275574d96ca70098557
+hjson==3.1.0
+httpcore==1.0.9
+httpx==0.28.1
+huggingface_hub==0.36.2
+idna==3.19
+ImageIO==2.37.4
+Jinja2==3.1.6
+joblib==1.5.3
+kiwisolver==1.5.0
+lazy-loader==0.5
+# Editable install with no version control (llamafactory==0.9.4.dev0)
+-e /training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok
+markdown-it-py==4.2.0
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+mdurl==0.1.2
+modelscope @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/modelscope-1.39.1-py3-none-any.whl#sha256=c1567b9d319b11d815832d13c11f71a6413b19cf6374cef6937c54d830552a97
+modelscope-hub==0.2.0
+mpmath==1.3.0
+msgpack==1.2.1
+multidict==6.7.1
+multiprocess==0.70.16
+networkx==3.6.1
+ninja==1.13.0
+numpy==2.4.6
+nvidia-cublas-cu11==11.11.3.6
+nvidia-cuda-cupti-cu11==11.8.87
+nvidia-cuda-nvrtc-cu11==11.8.89
+nvidia-cuda-runtime-cu11==11.8.89
+nvidia-cudnn-cu11==9.1.0.70
+nvidia-cufft-cu11==10.9.0.58
+nvidia-curand-cu11==10.3.0.86
+nvidia-cusolver-cu11==11.4.1.48
+nvidia-cusparse-cu11==11.7.5.86
+nvidia-nccl-cu11==2.20.5
+nvidia-nvtx-cu11==11.8.86
+omegaconf==2.3.1
+opencv-python @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/opencv_python-5.0.0.93-cp37-abi3-manylinux_2_28_x86_64.whl#sha256=c8de2dec111122a02e8beb28e16c31904992dfd6186560b142a92c71403c1039
+orjson==3.12.0
+packaging==26.3
+pandas @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/pandas-2.3.3-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64%20%281%29.whl#sha256=b98560e98cb334799c0b07ca7967ac361a47326e9b4e5a7dfb5ab2b1c9d35a1b
+peft==0.17.1
+pillow @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/pillow-11.3.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl#sha256=106064daa23a745510dabce1d84f29137a37224831d88eb4ce94bb187b1d7e5f
+propcache==0.5.2
+protobuf==7.36.0
+psutil==7.2.2
+py-cpuinfo==9.0.0
+pyarrow @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/pyarrow-25.0.1-cp311-cp311-manylinux_2_28_x86_64.whl#sha256=25f8720bf6387d5dc2ebd2622112de630760419e4b66134405dd24110d15f37e
+pydantic==2.12.3
+pydantic_core==2.41.4
+pydub==0.25.1
+Pygments==2.21.0
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+python-multipart==0.0.32
+pytz==2026.3.post1
+PyYAML==6.0.3
+regex==2026.7.19
+requests==2.34.2
+rich==15.0.0
+ruff @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/ruff-0.16.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl#sha256=f2d812e482f5a7e02eee26cd73d2a37ebbdf47d795ea63ba1b89110ae93e9fb3
+safehttpx==0.1.7
+safetensors==0.8.0
+scikit-image @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/scikit_image-0.26.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl#sha256=74aa5518ccea28121f57a95374581d3b979839adc25bb03f289b1bc9b99c58af
+scikit-learn @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/scikit_learn-1.8.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl#sha256=ada8121bcb4dac28d930febc791a69f7cb1673c8495e5eee274190b73a4559c1
+scipy @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/scipy-1.17.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl#sha256=43af8d1f3bea642559019edfe64e9b11192a8978efbd1539d7bc2aaa23d92de4
+seaborn==0.13.2
+# Editable install with no version control (segment_anything==1.0)
+-e /training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-mm/segment-anything-main
+semantic-version==2.10.0
+sentencepiece==0.2.2
+shellingham==1.5.4
+shtab==1.12.0
+six==1.17.0
+sse-starlette==3.4.8
+starlette==0.52.1
+sympy==1.14.0
+termcolor==3.3.0
+threadpoolctl==3.6.0
+tifffile==2026.3.3
+tiktoken==0.14.0
+tokenizers==0.22.2
+tomlkit==0.13.3
+torch==2.4.0+cu118
+torch_scatter==2.1.2+pt24cu118
+torchaudio==2.4.0+cu118
+torchdata==0.11.0
+torchvision==0.19.0+cu118
+tqdm==4.70.0
+transformers @ file:///training-pfs-shanghai/private/jiaqitang/project5/LLaMA-Factory-main-HeatTok/transformers-4.57.1-py3-none-any.whl#sha256=b10d05da8fa67dc41644dbbf9bc45a44cb86ae33da6f9295f5fbf5b7890bd267
+triton==3.0.0
+trl==0.24.0
+typer==0.27.1
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tyro==0.8.14
+tzdata==2026.3
+urllib3==2.7.0
+uvicorn==0.52.4
+websockets==15.0.1
+xxhash==4.0.1
+yarl==1.24.5

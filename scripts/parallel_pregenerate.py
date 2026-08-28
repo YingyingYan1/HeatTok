@@ -60,9 +60,7 @@ def main():
     log_dir = Path("logs/pregenerate_cache")
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Record start time
-    start_time = time.time()
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Starting parallel cache pregeneration...")
+    print("Starting parallel cache pregeneration...")
     print()
 
     # Launch worker processes
@@ -126,16 +124,9 @@ def main():
     for gpu_id, proc, _ in processes:
         proc.wait()
 
-    # Compute elapsed time
-    elapsed = time.time() - start_time
-    hours = int(elapsed // 3600)
-    minutes = int((elapsed % 3600) // 60)
-    seconds = int(elapsed % 60)
-
     print()
     print("=" * 60)
     print("All pregeneration tasks completed!")
-    print(f"Total elapsed time: {hours}h {minutes}m {seconds}s")
     print("=" * 60)
     print()
 

@@ -52,7 +52,11 @@ We propose **HeatTok**, a semantic-aware tokenizer driven by thermodiffusion agg
 - **G-MRoPE**: Injects the Gaussian center, scale, and orientation parameters of irregular tokens into M-RoPE. This endows MLLMs with robust positional representations and precise perception of scale and orientation.
 
 <p align="center">
-  <img src="./frame.png" alt="Overview of the HeatTok framework" width="100%">
+  <img src="./figures/frame.png" alt="Overview of the HeatTok framework" width="100%">
+</p>
+
+<p align="center">
+  <img src="./figures/result.png" alt="HeatTok qualitative results" width="100%">
 </p>
 
 ---
@@ -66,29 +70,57 @@ git clone https://github.com/YingyingYan1/HeatTok.git
 cd HeatTok
 ```
 
+You can also install dependencies directly with:
+
 ```bash
-conda create -n heatok python=3.10 -y
+pip install -r requirements.txt
+```
+
+This is a quick one-shot setup option. For CUDA-sensitive packages (e.g., PyTorch, `torch-scatter`, `flash-attn`), the step-by-step installation below is still recommended.
+
+### 1. Create Conda Environment
+
+```bash
+conda create -n heatok python=3.11 -y
 conda activate heatok
-pip install -r requirements.txt
-pip install -e ".[torch,metrics]"
 ```
 
-### Additional Dependencies
-
-HeatTok requires FastSAM for initial segmentation:
+### 2. Install PyTorch (CUDA 11.8 example)
 
 ```bash
-# Clone FastSAM
-git clone https://github.com/CASIA-LMC-Lab/FastSAM.git FastSAM-main
-cd FastSAM-main
-pip install -r requirements.txt
+pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
+  --index-url https://download.pytorch.org/whl/cu118
 ```
 
+### 3. Install LLaMA-Factory
+
+```bash
+pip install -e .
+```
+
+### 4. Install FastSAM Dependencies
 
 
-The default launcher uses DeepSpeed ZeRO-3 and FlashAttention 2. Install versions compatible with your CUDA and PyTorch environment.
+```bash
+pip install opencv-python pillow tqdm seaborn scikit-learn scikit-image
+```
 
----
+### 5. Install HeatTok Additional Dependencies
+
+```bash
+pip install torch-scatter -f https://data.pyg.org/whl/torch-2.4.0+cu118.html
+pip install flash-attn --no-build-isolation   
+pip install deepspeed                          
+
+### 6. Meta SAM (Optional)
+
+If you want to use Meta SAM instead of FastSAM:
+
+```bash
+cd segment-anything-main
+pip install -e .
+```
+
 
 ## 🤖 Models
 
@@ -118,8 +150,6 @@ Place the datasets under the repository root with the following layout (relative
 ### VRSBench
 
 VRSBench is a visual question answering benchmark for remote sensing images, covering question types including category, existence, quantity, color, shape, size, position, direction, scene, and reasoning.
-
-
 
 ### EarthVQA
 
@@ -151,19 +181,6 @@ Cache files are saved to `src/semantic_patch_cache/` with the naming format:
 {image_hash}_g{0|1}_gd{8}_s{semantic_patch_size}.pt
 ```
 
-Where:
-- `g`: whether `global_downsample` is enabled (0 or 1)
-- `gd`: global downsample divisor (default: 8)
-- `s`: semantic patch size (e.g., 28)
-
-### Cache Contents
-
-Each `.pt` file contains:
-- Semantic patches after FastSAM segmentation + thermodiffusion merging
-- Grid metadata
-- Gaussian position parameters for G-MRoPE
-
-
 ---
 
 ## 🚀 Training
@@ -176,11 +193,13 @@ The main training configuration is at `examples/train_lora/qwen2_5vl_lora_sft.ya
 ### Launch Training
 
 ```bash
-# Single GPU
+# Adjust CUDA_VISIBLE_DEVICES / NPROC_PER_NODE / MASTER_PORT for your machine.
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+MASTER_ADDR=127.0.0.1 \
+MASTER_PORT=29501 \
+FORCE_TORCHRUN=1 \
+NPROC_PER_NODE=8 \
 llamafactory-cli train examples/train_lora/qwen2_5vl_lora_sft.yaml
-
-# Multi-GPU with DeepSpeed
-deepspeed --num_gpus 8 src/train.py examples/train_lora/qwen2_5vl_lora_sft.yaml
 ```
 
 ### Key HeatTok Parameters
@@ -190,7 +209,8 @@ deepspeed --num_gpus 8 src/train.py examples/train_lora/qwen2_5vl_lora_sft.yaml
 | `use_semantic_patches` | Enable HeatTok semantic tokenization | `true` |
 | `global_downsample` | Enable global branch for scene-level context | `true` |
 | `semantic_patch_size` | Target size for semantic patches | `28` |
-| `sam_checkpoint` | Path to FastSAM weights | Required |
+| `sam_backend` | Segmentation backend: `fastsam` / `sam` / `auto` | `fastsam` |
+| `sam_checkpoint` | Path to FastSAM (`.pt`) or SAM (`.pth`) weights | Required |
 
 ---
 
@@ -198,10 +218,14 @@ deepspeed --num_gpus 8 src/train.py examples/train_lora/qwen2_5vl_lora_sft.yaml
 
 Evaluation code will be uploaded soon.
 
+## 🎨 Quick Visualization
+
+For a lightweight qualitative check, you can run the demo in `visualization/` to visualize HeatTok merged token boundaries on sample images.
+
 ```bash
-# Coming soon
-# python evaluate.py --model_path <checkpoint> --dataset <vrsbench|earthvqa>
+CUDA_VISIBLE_DEVICES=0 python visualization/visualize_heatok.py
 ```
+
 
 ---
 
@@ -221,12 +245,10 @@ If you find HeatTok useful in your research, please cite our paper:
 }
 ```
 
-
 ---
 
 ## 🤝 Acknowledgements
 
-We thank the authors of [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) for their excellent unified fine-tuning framework, [FastSAM](https://github.com/CASIA-LMC-Lab/FastSAM) for efficient segment anything, and [Qwen2.5-VL](https://github.com/QwenLM/Qwen2-VL) for the powerful multimodal foundation model.
+We thank the authors of [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory) for their excellent unified fine-tuning framework, [SAM](https://github.com/facebookresearch/segment-anything) ([Segment Anything](https://github.com/facebookresearch/segment-anything)) and [FastSAM](https://github.com/CASIA-LMC-Lab/FastSAM) for segmentation backends, and [Qwen2.5-VL](https://github.com/QwenLM/Qwen2-VL) for the powerful multimodal foundation model.
 
 ---
-

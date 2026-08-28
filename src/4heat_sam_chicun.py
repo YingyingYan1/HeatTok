@@ -11,8 +11,6 @@ import torch.nn.functional as F
 import math
 import builtins
 from collections import defaultdict
-import time
-from tqdm import trange, tqdm
 from sklearn.cluster import KMeans
 
 # English comment.
@@ -30,6 +28,14 @@ except ImportError:
     FASTSAM_AVAILABLE = False
     FastSAM = None
     FastSAMPrompt = None
+
+try:
+    from segment_anything import sam_model_registry, SamAutomaticMaskGenerator
+    SAM_AVAILABLE = True
+except Exception:
+    sam_model_registry = None
+    SamAutomaticMaskGenerator = None
+    SAM_AVAILABLE = False
 
 # English comment.
 try:
@@ -57,7 +63,7 @@ if scatter_mean is None:
 
 
 _LOG_LEVEL_MAP = {"ERROR": 0, "WARN": 1, "INFO": 2, "DEBUG": 3}
-_DEFAULT_LOG_LEVEL = os.getenv("SAM_HEAT_LOG_LEVEL", "WARN").upper()
+_DEFAULT_LOG_LEVEL = os.getenv("SAM_HEAT_LOG_LEVEL", "ERROR").upper()
 _BUILTIN_PRINT = builtins.print
 
 
@@ -242,7 +248,7 @@ class GPUHeatDiffusion:
                                       complexities: torch.Tensor,
                                       edge_index: torch.Tensor,
                                       num_clusters: int,
-                                      K0: float = 1.0,
+                                      K0: float = 0.5,
                                       sigma_C: float = 5.0,
                                       alpha: float = 0.5) -> torch.Tensor:
         """English docstring."""
@@ -323,7 +329,7 @@ class GPUHeatDiffusion:
     @staticmethod
     def merge_by_temperature_gpu(temperatures: torch.Tensor,
                                   edge_index: torch.Tensor,
-                                  merge_threshold: float = 0.03) -> torch.Tensor:
+                                  merge_threshold: float = 0.01) -> torch.Tensor:
         """English docstring."""
         device = temperatures.device
         K = temperatures.shape[0]
@@ -893,7 +899,7 @@ class SLICProcessor(object):
                 if 0 <= label_idx < self.K_actual:
                     temp_pixels[label_idx].append((h,w))
 
-        for cluster_id_no, cluster in tqdm(self.cluster_map.items(), desc="Calculating Complexity (CPU)"):
+        for cluster_id_no, cluster in self.cluster_map.items():
            cluster_idx = -1
            for i, c in enumerate(self.clusters):
                if c.no == cluster_id_no:
@@ -967,7 +973,7 @@ class SLICProcessor(object):
         print("Temperatures ready (GPU)")
 
 
-    def _calculate_diffusion_coeffs(self, K0=1.0, sigma_C=5.0, alpha=0.5):
+    def _calculate_diffusion_coeffs(self, K0=0.5, sigma_C=5.0, alpha=0.5):
         """English docstring."""
         print("Computing diffusion coefficients on GPU...")
         if not hasattr(self, 'edge_index') or self.edge_index is None:
@@ -991,7 +997,7 @@ class SLICProcessor(object):
         
         print("Diffusion matrix ready (GPU)")
 
-    def _simulate_heat_diffusion(self, delta_t=0.001, max_iterations=50):
+    def _simulate_heat_diffusion(self, delta_t=0.001, max_iterations=30):
         """English docstring."""
         print(f"Simulating heat diffusion on GPU ({max_iterations} iterations)...")
         
@@ -1020,7 +1026,7 @@ class SLICProcessor(object):
         
         print("Heat diffusion finished (GPU)")
 
-    def _merge_clusters(self, merge_threshold=0.03):
+    def _merge_clusters(self, merge_threshold=0.01):
         """English docstring."""
         print(f"Merging by temperature on GPU (threshold={merge_threshold})...")
         
@@ -1050,16 +1056,10 @@ class SLICProcessor(object):
                     target_no = self.clusters[new_label].no
                     uf.union(c.no, target_no)
         
-        # English comment.
-        unique_labels = len(np.unique(merge_labels_cpu))
-        merged_count = self.K_actual - unique_labels
-        print(f"Merge labels: {self.K_actual} -> {unique_labels} (GPU)")
-        
         return uf
 
     def _generate_final_labels(self, uf_structure):
         """English docstring."""
-        print("Generating final labels (GPU)...")
         
         # English comment.
         idx_to_no = {i: c.no for i, c in enumerate(self.clusters)}
@@ -1076,7 +1076,6 @@ class SLICProcessor(object):
 
         unique_roots = sorted(list(set(root_map_no.values())))
         root_renumber_map = {root_id: i for i, root_id in enumerate(unique_roots)}
-        num_final_segments = len(unique_roots)
 
         # English comment.
         final_map = {}
@@ -1109,8 +1108,6 @@ class SLICProcessor(object):
         
         # English comment.
         self.final_merged_labels = temp_labels.cpu().numpy()
-        
-        print(f"Final segments after merge: {num_final_segments}")
 
         # English comment.
         unassigned_mask = (self.final_merged_labels == -1)
@@ -1320,7 +1317,7 @@ class SLICProcessor(object):
         unique_labels = np.unique(final_labels_map)
         num_patches_saved = 0
         
-        for label_id in tqdm(unique_labels, desc="Extracting Patches"):
+        for label_id in unique_labels:
             # English comment.
             if label_id == -1:
                 continue
@@ -1412,7 +1409,7 @@ class SLICProcessor(object):
         
         patches_list = []
         
-        for label_id in tqdm(unique_labels, desc="Generating Patch Tensors"):
+        for label_id in unique_labels:
             # English comment.
             mask = torch.from_numpy(final_labels_map == label_id) # (H, W)
             
@@ -1480,7 +1477,7 @@ class SLICProcessor(object):
         centers_list = []
         gaussian_list = []
         
-        for label_id in tqdm(unique_labels, desc="Generating Position Tensors"):
+        for label_id in unique_labels:
             # English comment.
             rows, cols = np.where(final_labels_map == label_id)
             if len(rows) == 0:
@@ -1546,7 +1543,7 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
     def __init__(self, sam_model_raw, sam_model_dataparallel, mask_generator, 
                  filename, output_dir_base, device_id=0):
         
-        print(f"SAMHeatDiffusionProcessor (FastSAM): loading {filename} on cuda:{device_id}")
+        print(f"SAMHeatDiffusionProcessor: loading {filename} on cuda:{device_id}")
         
         # English comment.
         # super().__init__ ?:
@@ -1559,157 +1556,96 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
                          output_dir_base=output_dir_base, 
                          device_id=device_id)
 
-        # English comment.
-        # English comment.
-        self.fastsam_model = sam_model_raw  # FastSAM model
-        self.sam_raw = sam_model_raw  # English comment.
-        self.sam_dp = sam_model_dataparallel  # English comment.
-        self.mask_generator = mask_generator  # English comment.
+        self.sam_raw = sam_model_raw
+        self.sam_dp = sam_model_dataparallel
+        self.mask_generator = mask_generator
+        self.backend_name = getattr(mask_generator, "backend_name", None) or "SAM"
+        self.fastsam_model = sam_model_raw if self.backend_name.upper() == "FASTSAM" else None
 
-        # English comment.
-        # English comment.
-        print("Loading image for FastSAM segmentation...")
+        print(f"Loading image for {self.backend_name} segmentation...")
         original_bgr = cv2.imread(filename)
         if original_bgr is None:
-            raise FileNotFoundError(f"FastSAM image not found: {filename}")
+            raise FileNotFoundError(f"Image not found: {filename}")
         self.image_rgb_numpy_unblurred = cv2.cvtColor(original_bgr, cv2.COLOR_BGR2RGB)
         
-        # Keep a PIL image for FastSAM inference
-        from PIL import Image
-        self.image_pil = Image.fromarray(self.image_rgb_numpy_unblurred)
+        self.image_pil = None
+        if self.backend_name.upper() == "FASTSAM":
+            from PIL import Image
+            self.image_pil = Image.fromarray(self.image_rgb_numpy_unblurred)
         
-        print("SAMHeatDiffusionProcessor (FastSAM) initialized.")
+        print(f"SAMHeatDiffusionProcessor ({self.backend_name}) initialized.")
 
     def generate_labels_from_sam(self, morph_kernel_size=5):
         """English docstring."""
-        print("--- Running FastSAM inference... ---")
-        
-        if not FASTSAM_AVAILABLE or self.fastsam_model is None:
-            print("Warning: FastSAM is not available")
-            self.slic_labels = torch.zeros((self.image_height, self.image_width), 
-                                           dtype=torch.long, device=self.device)
-            self.K_actual = 0
-            self.clusters = []
-            self.cluster_map = {}
-            return
-        
-        # English comment.
-        device_str = "cuda" if torch.cuda.is_available() else "cpu"
-        
+        backend_name = (self.backend_name or "SAM").upper()
+        print(f"--- Running {backend_name} inference... ---")
+
         try:
-            # English comment.
-            # English comment.
-            # English comment.
-            # English comment.
-            everything_results = self.fastsam_model(
-                self.image_pil,
-                device=device_str,
-                retina_masks=True,
-                imgsz=1024,
-                conf=0.1,  # English comment.
-                iou=0.5    # English comment.
-            )
-            
-            # English comment.
-            if everything_results is None or len(everything_results) == 0:
-                print("Warning: FastSAM returned empty results")
-                self.slic_labels = torch.zeros((self.image_height, self.image_width), 
-                                               dtype=torch.long, device=self.device)
-                self.K_actual = 0
-                self.clusters = []
-                self.cluster_map = {}
-                return
-            
-            # English comment.
-            from fastsam import FastSAMPrompt
-            prompt_process = FastSAMPrompt(self.image_pil, everything_results, device=device_str)
-            
-            # English comment.
-            if everything_results[0] is None:
-                print("Warning: FastSAM results[0] is None")
-                self.slic_labels = torch.zeros((self.image_height, self.image_width), 
-                                               dtype=torch.long, device=self.device)
-                self.K_actual = 0
-                self.clusters = []
-                self.cluster_map = {}
-                return
-            
-            masks = prompt_process._format_results(everything_results[0], filter=0)
-            
-            print(f"FastSAM produced {len(masks)} masks")
+            if backend_name == "FASTSAM":
+                if not FASTSAM_AVAILABLE or self.fastsam_model is None or self.image_pil is None:
+                    raise RuntimeError("FastSAM backend requested but FastSAM is unavailable.")
+                device_str = "cuda" if torch.cuda.is_available() else "cpu"
+                everything_results = self.fastsam_model(
+                    self.image_pil,
+                    device=device_str,
+                    retina_masks=True,
+                    imgsz=1024,
+                    conf=0.1,
+                    iou=0.5,
+                    verbose=False,
+                )
+                if everything_results is None or len(everything_results) == 0 or everything_results[0] is None:
+                    raise RuntimeError("FastSAM returned empty results.")
+
+                prompt_process = FastSAMPrompt(self.image_pil, everything_results, device=device_str)
+                masks = prompt_process._format_results(everything_results[0], filter=0)
+            else:
+                if not SAM_AVAILABLE or self.mask_generator is None:
+                    raise RuntimeError("SAM backend requested but SAM is unavailable.")
+                masks = self.mask_generator.generate(self.image_rgb_numpy_unblurred)
 
             if len(masks) == 0:
-                print("Warning: FastSAM masks list is empty")
-                self.slic_labels = torch.zeros((self.image_height, self.image_width), 
-                                               dtype=torch.long, device=self.device)
+                print(f"Warning: {backend_name} masks list is empty")
+                self.slic_labels = torch.zeros((self.image_height, self.image_width), dtype=torch.long, device=self.device)
                 self.K_actual = 0
                 self.clusters = []
                 self.cluster_map = {}
                 return
 
-            # English comment.
-            # English comment.
-            # English comment.
-            sorted_anns = sorted(masks, key=(lambda x: x['area']), reverse=False)
-            
-            # English comment.
+            sorted_anns = sorted(masks, key=(lambda x: x["area"]), reverse=False)
             sam_labels_cpu = np.full((self.image_height, self.image_width), -1, dtype=np.int32)
-            
-            # 3. Assign FastSAM labels (0 to K_sam-1)
             K_sam = 0
-            # English comment.
-            # English comment.
-            for i, ann in enumerate(tqdm(sorted_anns, desc="Assigning FastSAM masks")):
-                m = ann['segmentation']
-                # English comment.
+            for i, ann in enumerate(sorted_anns):
+                m = ann["segmentation"]
                 if isinstance(m, np.ndarray):
-                    sam_labels_cpu[m] = i # English comment.
-                else:
-                    # English comment.
                     sam_labels_cpu[m.astype(bool)] = i
+                else:
+                    sam_labels_cpu[m] = i
                 K_sam = i + 1
-            
-            print(f"Collected {K_sam} FastSAM masks")
 
-            # English comment.
             background_mask_cpu = (sam_labels_cpu == -1).astype(np.uint8)
-            
             K_total = K_sam
-            
             if np.sum(background_mask_cpu) > 0:
-                print("Processing background regions...")
-                
-                # English comment.
                 if morph_kernel_size > 0:
-                    print(f"Applying {morph_kernel_size}x{morph_kernel_size} morphology open...")
                     kernel = np.ones((morph_kernel_size, morph_kernel_size), np.uint8)
                     opened_background_mask_cpu = cv2.morphologyEx(background_mask_cpu, cv2.MORPH_OPEN, kernel)
                 else:
                     opened_background_mask_cpu = background_mask_cpu
-
                 num_bg_labels, bg_labels_matrix = cv2.connectedComponents(opened_background_mask_cpu, connectivity=8)
-                
-                print(f"Found {num_bg_labels - 1} background components")
-
-                # English comment.
                 if num_bg_labels > 1:
-                    for i in range(1, num_bg_labels): # 0 is background
+                    for i in range(1, num_bg_labels):
                         component_mask = (bg_labels_matrix == i)
                         sam_labels_cpu[component_mask] = K_sam + i - 1
                     K_total = K_sam + (num_bg_labels - 1)
-            
-            print(f"Total regions (FastSAM + background): {K_total}")
 
-            # English comment.
             self.K_actual = K_total
             self.slic_labels = torch.from_numpy(sam_labels_cpu).long().to(self.device)
-            
+
         except Exception as e:
-            print(f"Warning: FastSAM processing failed: {e}")
+            print(f"Warning: {backend_name} processing failed: {e}")
             import traceback
             traceback.print_exc()
-            self.slic_labels = torch.zeros((self.image_height, self.image_width), 
-                                           dtype=torch.long, device=self.device)
+            self.slic_labels = torch.zeros((self.image_height, self.image_width), dtype=torch.long, device=self.device)
             self.K_actual = 0
             self.clusters = []
             self.cluster_map = {}
@@ -1724,7 +1660,7 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
             self.cluster_map = {}
             return
             
-        print(f"Populating clusters from labels: {self.K_actual} regions")
+        print("Populating clusters from labels")
         if scatter_mean is None:
             raise ImportError("torch_scatter is required for cluster population")
         
@@ -1802,12 +1738,10 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
 
     def run_sam_and_merge(self, **merge_params):
         """English docstring."""
-        
-        print(f"\n{'='*10} FastSAM + Heat Diffusion: {self.original_filename_base} {'='*10}")
-        total_start_time = time.time()
+        backend_name = (self.backend_name or "SAM").upper()
+        print(f"\n{'='*10} {backend_name} + Heat Diffusion: {self.original_filename_base} {'='*10}")
 
-        print(f"\n--- Step 1: FastSAM segmentation [GPU] ---")
-        start_time = time.time()
+        print(f"\n--- Step 1: {backend_name} segmentation [GPU] ---")
         
         # 1. Run FastSAM to get self.slic_labels and self.K_actual
         self.generate_labels_from_sam(
@@ -1819,27 +1753,26 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
         
         # English comment.
         if self.K_actual == 0:
-            print("Warning: FastSAM produced zero regions, skipping")
+            print(f"Warning: {backend_name} produced zero regions, skipping")
             # English comment.
             return None, None, None
             
         # English comment.
-        print("\n--- FastSAM postprocess: assign unlabeled pixels [GPU/CPU] ---")
+        print(f"\n--- {backend_name} postprocess: assign unlabeled pixels [GPU/CPU] ---")
         self._assign_unlabeled_pixels()
-        
-        sam_end_time = time.time()
-        print(f"--- FastSAM done ({sam_end_time - start_time:.2f}s), regions: {self.K_actual} ---")
+
+        save_visualization = bool(merge_params.get('save_visualization', True))
 
         # English comment.
         sam_labels_cpu = self.slic_labels.cpu().numpy()
-        sam_output_name = f"{self.original_filename_base}_sam_only_boundary.png"
-        sam_full_output_path = os.path.join(self.output_dir, sam_output_name)
-        self.save_final_image(sam_full_output_path, sam_labels_cpu)
-        
-        sam_avg_color_output_name = f"{self.original_filename_base}_sam_only_avg_color.png"
-        sam_avg_color_full_output_path = os.path.join(self.output_dir, sam_avg_color_output_name)
-        # English comment.
-        self.save_average_color_image(sam_avg_color_full_output_path, sam_labels_cpu)
+        if save_visualization:
+            sam_output_name = f"{self.original_filename_base}_sam_only_boundary.png"
+            sam_full_output_path = os.path.join(self.output_dir, sam_output_name)
+            self.save_final_image(sam_full_output_path, sam_labels_cpu)
+            
+            sam_avg_color_output_name = f"{self.original_filename_base}_sam_only_avg_color.png"
+            sam_avg_color_full_output_path = os.path.join(self.output_dir, sam_avg_color_output_name)
+            self.save_average_color_image(sam_avg_color_full_output_path, sam_labels_cpu)
 
         # English comment.
         # English comment.
@@ -1847,26 +1780,21 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
         if min_size_threshold > 0:
             self._enforce_min_size(min_size_threshold)
             
-            # English comment.
-            sam_labels_clean_cpu = self.slic_labels.cpu().numpy()
-            sam_clean_output_name = f"{self.original_filename_base}_sam_clean_boundary.png"
-            sam_clean_full_output_path = os.path.join(self.output_dir, sam_clean_output_name)
-            self.save_final_image(sam_clean_full_output_path, sam_labels_clean_cpu)
-            
-            sam_clean_color_output_name = f"{self.original_filename_base}_sam_clean_avg_color.png"
-            sam_clean_color_full_output_path = os.path.join(self.output_dir, sam_clean_color_output_name)
-            self.save_average_color_image(sam_clean_color_full_output_path, sam_labels_clean_cpu)
+            if save_visualization:
+                sam_labels_clean_cpu = self.slic_labels.cpu().numpy()
+                sam_clean_output_name = f"{self.original_filename_base}_sam_clean_boundary.png"
+                sam_clean_full_output_path = os.path.join(self.output_dir, sam_clean_output_name)
+                self.save_final_image(sam_clean_full_output_path, sam_labels_clean_cpu)
+                
+                sam_clean_color_output_name = f"{self.original_filename_base}_sam_clean_avg_color.png"
+                sam_clean_color_full_output_path = os.path.join(self.output_dir, sam_clean_color_output_name)
+                self.save_average_color_image(sam_clean_color_full_output_path, sam_labels_clean_cpu)
             
         else:
             print("\n--- Skip min-size filter (threshold=0) ---")
 
         # English comment.
-        num_segments_pre_merge = self.K_actual
-        print(f"[FastSAM+Merge] regions before merge: {num_segments_pre_merge}")
-
         # --- Step 2: heat diffusion merge ---
-        print(f"\n--- Step 2: Heat diffusion merge [GPU/CPU] ---")
-        merge_start_time = time.time()
         
         # 1. Compute complexities
         self._calculate_complexities() # GPU + CPU pipeline
@@ -1874,39 +1802,18 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
         # 2. Build adjacency
         # self._calculate_average_colors() # already done in _populate...
         self._build_adjacency() # English comment.
-        print(f"[Adjacency] edges: {len(self.neighbors)}")
         
         if not self.neighbors:
             print("Warning: no adjacency edges found")
             self.final_merged_labels = self.slic_labels.cpu().numpy()
         else:
-            print("Running heat diffusion...")
-            # HeatTok paper Optimal defaults: κ0=1.0, σC=5.0, σT=5.0, α=0.5, τm=0.03
-            print(f"[Heat Params] sigma_T={merge_params.get('sigma_T', 5.0)}, "
-                  f"sigma_C={merge_params.get('sigma_C', 5.0)}, "
-                  f"alpha={merge_params.get('alpha', 0.5)}, "
-                  f"K0={merge_params.get('K0', 1.0)}, "
-                  f"delta_t={merge_params.get('delta_t', 0.001)}, "
-                  f"iterations={merge_params.get('diffusion_iterations', 30)}, "
-                  f"merge_threshold={merge_params.get('merge_threshold', 0.03)}")
             self._calculate_initial_temperatures(sigma_T=merge_params.get('sigma_T', 5.0))
-            self._calculate_diffusion_coeffs(K0=merge_params.get('K0', 1.0), 
+            self._calculate_diffusion_coeffs(K0=merge_params.get('K0', 0.5), 
                                            sigma_C=merge_params.get('sigma_C', 5.0), 
                                            alpha=merge_params.get('alpha', 0.5))
             self._simulate_heat_diffusion(delta_t=merge_params.get('delta_t', 0.001), 
                                           max_iterations=merge_params.get('diffusion_iterations', 30))
-            merge_structure = self._merge_clusters(merge_threshold=merge_params.get('merge_threshold', 0.03))
-            
-            # English comment.
-            if merge_structure is not None:
-                unique_roots = set()
-                for cluster_id in self.cluster_map.keys():
-                    root = merge_structure.find(cluster_id)
-                    unique_roots.add(root)
-                num_merged_groups = len(unique_roots)
-                print(f"[Merge] merged groups: {num_merged_groups} (before: {len(self.cluster_map)})")
-            else:
-                print("[Merge] no merge structure returned")
+            merge_structure = self._merge_clusters(merge_threshold=merge_params.get('merge_threshold', 0.01))
             
             # English comment.
             self._generate_final_labels(merge_structure)
@@ -1926,7 +1833,7 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
         # English comment.
         post_min_size_threshold = merge_params.get('post_min_size_threshold', 0)
         post_max_size_threshold = merge_params.get('post_max_size_threshold', 0)
-        target_split_size = merge_params.get('target_split_size', 2500) # English comment.
+        target_split_size = merge_params.get('target_split_size', 15000) # English comment.
 
         if (post_min_size_threshold > 0 or post_max_size_threshold > 0) and self.final_merged_labels is not None:
             # English comment.
@@ -1942,19 +1849,14 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
             
         # English comment.
         if self.final_merged_labels is not None:
-            num_final_segments = len(np.unique(self.final_merged_labels[self.final_merged_labels != -1]))
-            reduction_ratio = (1 - num_final_segments / num_segments_pre_merge) * 100 if num_segments_pre_merge > 0 else 0
-            print(f"--- Final segments: {num_final_segments} (from {num_segments_pre_merge}, -{reduction_ratio:.1f}%) ---")
-            merge_end_time = time.time()
-            print(f"--- Merge done ({merge_end_time - merge_start_time:.2f}s) ---")
-
-            merged_output_name_boundary = f"{self.original_filename_base}_SAM_merged_boundary.png"
-            merged_output_name_color = f"{self.original_filename_base}_SAM_merged_avg_color.png"
-            merged_full_output_path_boundary = os.path.join(self.output_dir, merged_output_name_boundary)
-            merged_full_output_path_color = os.path.join(self.output_dir, merged_output_name_color)
-            
-            self.save_final_image(merged_full_output_path_boundary, self.final_merged_labels)
-            self.save_average_color_image(merged_full_output_path_color, self.final_merged_labels)
+            if save_visualization:
+                merged_output_name_boundary = f"{self.original_filename_base}_SAM_merged_boundary.png"
+                merged_output_name_color = f"{self.original_filename_base}_SAM_merged_avg_color.png"
+                merged_full_output_path_boundary = os.path.join(self.output_dir, merged_output_name_boundary)
+                merged_full_output_path_color = os.path.join(self.output_dir, merged_output_name_color)
+                
+                self.save_final_image(merged_full_output_path_boundary, self.final_merged_labels)
+                self.save_average_color_image(merged_full_output_path_color, self.final_merged_labels)
     
             # English comment.
             
@@ -1978,59 +1880,45 @@ class SAMHeatDiffusionProcessor(SLICProcessor):
                 self.final_merged_labels
             )
 
-            # English comment.
-            # English comment.
-            merge_square = int(merge_params.get('merge_square', 4))
-            merge_square = max(merge_square, 1)
-            semantic_patch_tokens = int(patches_tensor.shape[0]) if patches_tensor is not None else 0
-            if semantic_patch_tokens % merge_square != 0:
-                print(f"[Token Warning] patch_tokens ({semantic_patch_tokens}) not divisible by merge_square ({merge_square})")
-            semantic_visual_tokens = int(math.ceil(semantic_patch_tokens / float(merge_square)))
-            global_visual_tokens = int(merge_params.get('global_visual_tokens', 0))
-            total_visual_tokens = global_visual_tokens + semantic_visual_tokens
-            print(
-                f"[Token] visual tokens -> global={global_visual_tokens}, "
-                f"semantic={semantic_visual_tokens}, total={total_visual_tokens} "
-                f"(patch_tokens={semantic_patch_tokens}, merge_square={merge_square}, patch_size={target_size})"
-            )
-            # English comment.
-            
-            total_end_time = time.time()
-            print(f"\n{'='*10} FastSAM + Heat Diffusion done (elapsed: {total_end_time - total_start_time:.2f}s) {'='*10}\n")
+            num_final_tokens = int(patches_tensor.shape[0]) if patches_tensor is not None else 0
+            _BUILTIN_PRINT(f"[HeatTok] Final tokens after merge: {num_final_tokens}")
+
             return patches_tensor, positions_tensor, gaussian_tensor
         else:
             # final_merged_labels is None: return empty outputs
             print("Warning: final_merged_labels is None, skipping patch tensor")
-            total_end_time = time.time()
-            print(f"\n{'='*10} FastSAM + Heat Diffusion done (elapsed: {total_end_time - total_start_time:.2f}s) {'='*10}\n")
             return None, None, None
 
-# --- 6. Standalone demo: FastSAM + Heat Diffusion ---
-# LLaMA-Factory training path loads FastSAM via sam_model_loader instead.
+# --- 6. Standalone demo: SAM/FastSAM + Heat Diffusion ---
+# LLaMA-Factory training path loads segmentation backends via sam_model_loader.
 
 if __name__ == '__main__':
     
     # Paths relative to repo root (VRSBench is sibling of this project by default)
     image_path = os.path.join(_repo_root, "..", "VRSBench", "Images_train", "Images_train", "00027_0000.png")
-    sam_checkpoint = os.path.join(_repo_root, "FastSAM-main", "weights", "FastSAM-x.pt")
+    sam_backend = os.environ.get("SAM_BACKEND", "fastsam").strip().lower()
+    if sam_backend == "sam":
+        sam_checkpoint = os.path.join(_repo_root, "segment-anything-main", "models", "sam_vit_h_4b8939.pth")
+    else:
+        sam_backend = "fastsam"
+        sam_checkpoint = os.path.join(_repo_root, "FastSAM-main", "weights", "FastSAM-x.pt")
+    sam_model_type = os.environ.get("SAM_MODEL_TYPE", "vit_h")
     output_dir = os.path.join(_repo_root, "outputs", "heatsam_output")
     patch_output_dir = os.path.join(_repo_root, "outputs", "patch_output")
 
     param_sam_morph_kernel = 5
     param_min_size = 50
-    param_post_min_size = 100
-    param_post_max_size = 10000
-    param_target_size = 1000
+    param_post_min_size = 500
+    param_post_max_size = 40000
+    param_target_size = 15000
+    param_merge_threshold = 0.01
 
-    # HeatTok paper Optimal (Ours): κ0=1.0, σC=5.0, σT=5.0, α=0.5, τm=0.03
-    param_merge_threshold = 0.03
-    
     heat_params = {
         'sigma_C': 5.0,
         'alpha': 0.5,
-        'K0': 1.0, 
+        'K0': 0.5,
         'sigma_T': 5.0,
-        'delta_t': 0.001, 
+        'delta_t': 0.001,
         'diffusion_iterations': 30,
         'merge_threshold': param_merge_threshold,
         'sam_morph_kernel': param_sam_morph_kernel,
@@ -2039,11 +1927,12 @@ if __name__ == '__main__':
         'post_max_size_threshold': param_post_max_size,
         'target_split_size': param_target_size,
         'patch_output_dir': patch_output_dir,
+        'save_visualization': True,
     }
 
-    print(f"--- Run FastSAM + Heat Diffusion ---")
+    print(f"--- Run {sam_backend.upper()} + Heat Diffusion ---")
     print(f"Image: {image_path}")
-    print(f"FastSAM checkpoint: {sam_checkpoint}")
+    print(f"Segmentation checkpoint: {sam_checkpoint}")
     print(f"Output dir: {output_dir}")
     print(f"min_size = {param_min_size}")
     print(f"Post min_size = {param_post_min_size}")
@@ -2056,24 +1945,42 @@ if __name__ == '__main__':
         print("Error: CUDA is not available")
         exit()
 
-    if FastSAM is None:
-        print("Error: FastSAM is unavailable. Please install/import FastSAM.")
-        exit()
-
     if not os.path.exists(sam_checkpoint):
-        print(f"Error: FastSAM checkpoint not found: {sam_checkpoint}")
+        print(f"Error: checkpoint not found: {sam_checkpoint}")
         exit()
 
     primary_device_id = 0
-    print(f"Loading FastSAM model on cuda:{primary_device_id} ...")
-    fastsam_model = FastSAM(sam_checkpoint)
-    print("FastSAM ready")
+    if sam_backend == "fastsam":
+        if FastSAM is None:
+            print("Error: FastSAM is unavailable. Please install/import FastSAM.")
+            exit()
+        print(f"Loading FastSAM model on cuda:{primary_device_id} ...")
+        sam_raw = FastSAM(sam_checkpoint)
+        sam_dataparallel = sam_raw
+        mask_generator = sam_raw
+        setattr(mask_generator, "backend_name", "FASTSAM")
+        print("FastSAM ready")
+    else:
+        if not SAM_AVAILABLE or sam_model_registry is None or SamAutomaticMaskGenerator is None:
+            print("Error: segment-anything is unavailable. Please install/import SAM.")
+            exit()
+        print(f"Loading SAM ({sam_model_type}) on cuda:{primary_device_id} ...")
+        sam_raw = sam_model_registry[sam_model_type](checkpoint=sam_checkpoint)
+        sam_raw.to(device=f"cuda:{primary_device_id}")
+        sam_dataparallel = torch.nn.DataParallel(sam_raw, device_ids=[primary_device_id])
+        mask_generator = SamAutomaticMaskGenerator(
+            sam_raw,
+            pred_iou_thresh=0.85,
+            stability_score_thresh=0.90,
+        )
+        setattr(mask_generator, "backend_name", "SAM")
+        print("SAM ready")
 
     try:
         processor = SAMHeatDiffusionProcessor(
-            sam_model_raw=fastsam_model,
-            sam_model_dataparallel=fastsam_model,
-            mask_generator=fastsam_model,
+            sam_model_raw=sam_raw,
+            sam_model_dataparallel=sam_dataparallel,
+            mask_generator=mask_generator,
             filename=image_path,
             output_dir_base=output_dir,
             device_id=primary_device_id,

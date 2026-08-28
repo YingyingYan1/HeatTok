@@ -351,8 +351,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
             rope_center_weight = rope_center_weight[:head_dim]
             rope_extent_weight = rope_extent_weight[:head_dim]
 
-        rope_center_weight = torch.cat([rope_center_weight, rope_center_weight])
-        rope_extent_weight = torch.cat([rope_extent_weight, rope_extent_weight])
         self.register_buffer(
             "rope_center_weight",
             rope_center_weight,
@@ -556,18 +554,8 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
                 raise ValueError("patch_positions must have shape (seq_len, 2)")
             if patch_positions_tensor.shape[0] != hidden_states.shape[0]:
                 raise ValueError("patch_positions must align with pixel patch tokens")
-            if getattr(self, "_debug_print_once", False) is False:
-                self._debug_print_once = True
-                print(
-                    "[Qwen2.5-Vision] Using semantic patch positions for rotary embedding.",
-                    "patch_positions shape:",
-                    patch_positions_tensor.shape,
-                )
         else:
             patch_positions_tensor = None
-            if getattr(self, "_debug_print_once_none", False) is False:
-                self._debug_print_once_none = True
-                print("[Qwen2.5-Vision] No semantic patch positions provided; using default grid positions.")
 
         if patch_extents is not None:
             patch_extents_tensor = patch_extents.to(hidden_states.device)
@@ -615,13 +603,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
             extent_emb = torch.cat((rotary_extent, rotary_extent), dim=-1)
             weight_center = self.rope_center_weight.to(center_emb.device, dtype=center_emb.dtype).unsqueeze(0)
             weight_extent = self.rope_extent_weight.to(center_emb.device, dtype=center_emb.dtype).unsqueeze(0)
-            if not getattr(self, "_extent_weight_debug_printed", False):
-                self._extent_weight_debug_printed = True
-                print(
-                    "[MRoPE Debug] Combined weight sample (first 8 dims):",
-                    weight_center[0, :8].tolist(),
-                    weight_extent[0, :8].tolist(),
-                )
             position_embeddings = (
                 center_emb.cos() * weight_center + extent_emb.cos() * weight_extent,
                 center_emb.sin() * weight_center + extent_emb.sin() * weight_extent,
@@ -725,23 +706,7 @@ class Qwen2_5_VLRotaryEmbedding(nn.Module):
 
     @torch.no_grad()
     @dynamic_rope_update  # power user: used with advanced RoPE types (e.g. dynamic rope)
-    def forward(
-        self, 
-        x, 
-        position_ids,
-        gmrope_params: Optional[dict] = None,
-    ):
-        """
-        Args:
-            x: hidden states tensor
-            position_ids: shape (3, batch_size, seq_len) for temporal/height/width
-            gmrope_params: Optional dict containing G-MRoPE parameters for vision tokens:
-                - "vision_mask": (batch_size, seq_len) bool tensor, True for vision tokens
-                - "centers": (num_vision_tokens, 2) normalized center coordinates (y, x)
-                - "extents": (num_vision_tokens, 2) normalized extent (2*sigma_y, 2*sigma_x)
-                - "orientations": (num_vision_tokens,) orientation angles in radians
-                - "token_indices": list of (batch_idx, seq_indices) for each image's tokens
-        """
+    def forward(self, x, position_ids):
         # In contrast to other models, Qwen2_5_VL has different position ids for the grids
         # So we expand the inv_freq to shape (3, ...)
         inv_freq_expanded = self.inv_freq[None, None, :, None].float().expand(3, position_ids.shape[1], -1, 1)
@@ -753,10 +718,6 @@ class Qwen2_5_VLRotaryEmbedding(nn.Module):
             emb = torch.cat((freqs, freqs), dim=-1)
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
-
-        # [HeatTok G-MRoPE] Apply Gaussian position encoding for vision tokens
-        if gmrope_params is not None and gmrope_params.get("vision_mask") is not None:
-            cos, sin = self._apply_gmrope(cos, sin, gmrope_params, x.device, x.dtype)
 
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
     
@@ -802,14 +763,15 @@ class Qwen2_5_VLRotaryEmbedding(nn.Module):
         if orientations is not None:
             orientations = orientations.to(device=device, dtype=torch.float32)
         
-        # Scale factor to convert normalized coords [0,1] to position space
-        position_scale = 1000.0
+        # Scale factor: use 4095.0 to match input quantization range [0, 4095]
+        # This ensures consistency with the coordinate system used in patch preprocessing
+        position_scale = 4095.0
         
-        # Get inverse frequencies: ω_m = θ^(-2m/D), stored as inv_freq
+        # Get inverse frequencies for standard RoPE-compatible computation
         inv_freq = self.inv_freq.to(device=device, dtype=torch.float32)  # (head_dim/2,)
         num_freqs = len(inv_freq)
         
-        # Prepare alpha/beta weights: α_m = 1 - m/(D/2-1), β_m = 1 - α_m
+        # Prepare alpha/beta weights following Eq.8: alpha_m = 1 - m/(D/2-1), beta_m = 1 - alpha_m
         D_half = num_freqs
         if D_half > 1:
             m_indices = torch.arange(D_half, device=device, dtype=torch.float32)
@@ -828,27 +790,23 @@ class Qwen2_5_VLRotaryEmbedding(nn.Module):
             if num_tokens == 0:
                 continue
             
-            # Get this batch's vision token parameters
             batch_centers = centers[vision_token_idx:vision_token_idx + num_tokens]  # (N, 2)
             batch_extents = extents[vision_token_idx:vision_token_idx + num_tokens] if extents is not None else None
             batch_orientations = orientations[vision_token_idx:vision_token_idx + num_tokens] if orientations is not None else None
             
-            # Scale to position space
+            # Scale normalized coords [0,1] to position space [0, 4095]
             mu = batch_centers * position_scale  # (N, 2), [y, x] format
             sigma = batch_extents * position_scale if batch_extents is not None else mu  # (N, 2)
             
-            # Step 1: Apply R(φ_k) - orientation rotation
-            # R(φ_k) @ [y, x]^T = [y*cos(φ) - x*sin(φ), y*sin(φ) + x*cos(φ)]^T
+            # Step 1: Apply orientation rotation R(phi_k) if available
             if batch_orientations is not None:
                 cos_phi = torch.cos(batch_orientations)  # (N,)
                 sin_phi = torch.sin(batch_orientations)  # (N,)
                 
-                # Rotate center: μ' = R(φ_k) @ μ
                 mu_y, mu_x = mu[:, 0], mu[:, 1]
                 mu_rot_y = mu_y * cos_phi - mu_x * sin_phi
                 mu_rot_x = mu_y * sin_phi + mu_x * cos_phi
                 
-                # Rotate extent: σ' = R(φ_k) @ σ
                 sigma_y, sigma_x = sigma[:, 0], sigma[:, 1]
                 sigma_rot_y = sigma_y * cos_phi - sigma_x * sin_phi
                 sigma_rot_x = sigma_y * sin_phi + sigma_x * cos_phi
@@ -856,54 +814,38 @@ class Qwen2_5_VLRotaryEmbedding(nn.Module):
                 mu_rot_y, mu_rot_x = mu[:, 0], mu[:, 1]
                 sigma_rot_y, sigma_rot_x = sigma[:, 0], sigma[:, 1]
             
-            # Step 2: Apply R(ω_m) for each frequency m
-            # R(ω_m) @ [y', x']^T = [y'*cos(ω_m) - x'*sin(ω_m), y'*sin(ω_m) + x'*cos(ω_m)]^T
-            # This gives P^(c)_km and P^(e)_km as 2D vectors for each (token k, frequency m)
+            # Step 2: RoPE-compatible frequency encoding
+            # Standard RoPE: freqs = position * inv_freq, then cos/sin(freqs)
+            # G-MRoPE adaptation: use center/extent positions with the same pattern
+            # This maintains numerical compatibility with pretrained RoPE distributions
             
-            # ω_m values (the actual frequency angles)
-            # In standard RoPE, inv_freq = 1/(θ^(2m/D)) = θ^(-2m/D)
-            # So ω_m for rotation should be based on position * inv_freq
-            # But paper uses R(ω_m) as a fixed rotation per frequency dimension
-            # ω_m = θ^(-2m/D) is the frequency itself
-            
-            # For proper 2D rotation: we need angle values
-            # Using inv_freq directly as the rotation angle for each m
-            omega_m = inv_freq  # (num_freqs,) - these are the frequency values
-            cos_omega = torch.cos(omega_m)  # (num_freqs,)
-            sin_omega = torch.sin(omega_m)  # (num_freqs,)
-            
-            # Expand for batch computation: (N, num_freqs)
-            cos_omega = cos_omega.unsqueeze(0).expand(num_tokens, -1)
-            sin_omega = sin_omega.unsqueeze(0).expand(num_tokens, -1)
-            
-            # mu_rot_y, mu_rot_x shape: (N,) -> (N, 1) for broadcasting
+            # Expand positions for broadcasting: (N,) -> (N, 1)
             mu_rot_y = mu_rot_y.unsqueeze(-1)  # (N, 1)
             mu_rot_x = mu_rot_x.unsqueeze(-1)  # (N, 1)
             sigma_rot_y = sigma_rot_y.unsqueeze(-1)  # (N, 1)
             sigma_rot_x = sigma_rot_x.unsqueeze(-1)  # (N, 1)
             
-            # P^(c)_km = R(ω_m) @ [μ'_y, μ'_x]^T
-            # P^(c)_km_y = μ'_y * cos(ω_m) - μ'_x * sin(ω_m)
-            # P^(c)_km_x = μ'_y * sin(ω_m) + μ'_x * cos(ω_m)
-            P_c_y = mu_rot_y * cos_omega - mu_rot_x * sin_omega  # (N, num_freqs)
-            P_c_x = mu_rot_y * sin_omega + mu_rot_x * cos_omega  # (N, num_freqs)
+            # Expand inv_freq for broadcasting: (num_freqs,) -> (1, num_freqs)
+            inv_freq_expanded = inv_freq.unsqueeze(0)  # (1, num_freqs)
             
-            # P^(e)_km = R(ω_m) @ [σ'_y, σ'_x]^T
-            P_e_y = sigma_rot_y * cos_omega - sigma_rot_x * sin_omega  # (N, num_freqs)
-            P_e_x = sigma_rot_y * sin_omega + sigma_rot_x * cos_omega  # (N, num_freqs)
+            # Compute RoPE-style frequencies: position * inv_freq
+            # This is the standard RoPE pattern that the model was pretrained with
+            freqs_c_y = mu_rot_y * inv_freq_expanded  # (N, num_freqs)
+            freqs_c_x = mu_rot_x * inv_freq_expanded  # (N, num_freqs)
+            freqs_e_y = sigma_rot_y * inv_freq_expanded  # (N, num_freqs)
+            freqs_e_x = sigma_rot_x * inv_freq_expanded  # (N, num_freqs)
             
-            # Step 3: Apply Eq.8 - weighted combination
-            # E^cos_k,m = α_m * cos(P^(c)_km) + β_m * cos(P^(e)_km)
-            # E^sin_k,m = α_m * sin(P^(c)_km) + β_m * sin(P^(e)_km)
-            # Note: cos/sin are applied element-wise to the 2D vector components
+            # Step 3: Apply Eq.8 weighted combination with standard cos/sin
+            # E^cos_k,m = alpha_m * cos(freqs_c) + beta_m * cos(freqs_e)
+            # E^sin_k,m = alpha_m * sin(freqs_c) + beta_m * sin(freqs_e)
             
             # For y-component (height dimension in M-RoPE)
-            E_cos_y = alpha_m * torch.cos(P_c_y) + beta_m * torch.cos(P_e_y)  # (N, num_freqs)
-            E_sin_y = alpha_m * torch.sin(P_c_y) + beta_m * torch.sin(P_e_y)  # (N, num_freqs)
+            E_cos_y = alpha_m * torch.cos(freqs_c_y) + beta_m * torch.cos(freqs_e_y)  # (N, num_freqs)
+            E_sin_y = alpha_m * torch.sin(freqs_c_y) + beta_m * torch.sin(freqs_e_y)  # (N, num_freqs)
             
             # For x-component (width dimension in M-RoPE)
-            E_cos_x = alpha_m * torch.cos(P_c_x) + beta_m * torch.cos(P_e_x)  # (N, num_freqs)
-            E_sin_x = alpha_m * torch.sin(P_c_x) + beta_m * torch.sin(P_e_x)  # (N, num_freqs)
+            E_cos_x = alpha_m * torch.cos(freqs_c_x) + beta_m * torch.cos(freqs_e_x)  # (N, num_freqs)
+            E_sin_x = alpha_m * torch.sin(freqs_c_x) + beta_m * torch.sin(freqs_e_x)  # (N, num_freqs)
             
             # Apply attention scaling
             E_cos_y = E_cos_y * self.attention_scaling
@@ -931,7 +873,7 @@ class Qwen2_5_VLRotaryEmbedding(nn.Module):
             sin_out[2, batch_idx, seq_indices_tensor, :target_dim] = E_sin_x_full.to(sin_out.dtype)
             
             vision_token_idx += num_tokens
-        
+
         return cos_out, sin_out
 
 
@@ -1212,6 +1154,10 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPreTrainedModel):
         gmrope_params: Optional[dict] = None,  # [HeatTok G-MRoPE] Gaussian position encoding params
         **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Union[tuple, BaseModelOutputWithPast]:
+        r"""
+        gmrope_params (`dict`, *optional*):
+            HeatTok G-MRoPE parameters for vision tokens (centers/extents/orientations and vision mask).
+        """
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -1288,8 +1234,13 @@ class Qwen2_5_VLTextModel(Qwen2_5_VLPreTrainedModel):
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
-        # [HeatTok G-MRoPE] Pass gmrope_params to apply Gaussian position encoding for vision tokens
-        position_embeddings = self.rotary_emb(hidden_states, position_ids, gmrope_params=gmrope_params)
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
+        # [HeatTok G-MRoPE] Apply after vanilla M-RoPE; cannot pass gmrope_params into rotary_emb.forward
+        # because @dynamic_rope_update only forwards (x, position_ids).
+        if gmrope_params is not None and gmrope_params.get("vision_mask") is not None:
+            cos, sin = position_embeddings
+            cos, sin = self.rotary_emb._apply_gmrope(cos, sin, gmrope_params, hidden_states.device, hidden_states.dtype)
+            position_embeddings = (cos, sin)
 
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
@@ -1831,6 +1782,14 @@ class Qwen2_5_VLModel(Qwen2_5_VLPreTrainedModel):
         r"""
         image_grid_thw (`torch.LongTensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
+        global_tokens_per_image (`torch.LongTensor` of shape `(num_images,)`, *optional*):
+            Number of global LLM-side image tokens for each image in HeatTok.
+        image_patch_positions (`torch.LongTensor` of shape `(total_patches, 2)`, *optional*):
+            Quantized center positions of HeatTok visual tokens.
+        image_patch_extents (`torch.LongTensor` of shape `(total_patches, 2)`, *optional*):
+            Quantized spatial extents of HeatTok visual tokens.
+        image_patch_orientations (`torch.Tensor` of shape `(total_patches,)`, *optional*):
+            Orientation angles (radians) of HeatTok visual tokens.
         video_grid_thw (`torch.LongTensor` of shape `(num_videos, 3)`, *optional*):
             The temporal, height and width of feature shape of each video in LLM.
         rope_deltas (`torch.LongTensor` of shape `(batch_size, )`, *optional*):
@@ -2068,6 +2027,14 @@ class Qwen2_5_VLForConditionalGeneration(Qwen2_5_VLPreTrainedModel, GenerationMi
             (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
         image_grid_thw (`torch.LongTensor` of shape `(num_images, 3)`, *optional*):
             The temporal, height and width of feature shape of each image in LLM.
+        global_tokens_per_image (`torch.LongTensor` of shape `(num_images,)`, *optional*):
+            Number of global LLM-side image tokens for each image in HeatTok.
+        image_patch_positions (`torch.LongTensor` of shape `(total_patches, 2)`, *optional*):
+            Quantized center positions of HeatTok visual tokens.
+        image_patch_extents (`torch.LongTensor` of shape `(total_patches, 2)`, *optional*):
+            Quantized spatial extents of HeatTok visual tokens.
+        image_patch_orientations (`torch.Tensor` of shape `(total_patches,)`, *optional*):
+            Orientation angles (radians) of HeatTok visual tokens.
         video_grid_thw (`torch.LongTensor` of shape `(num_videos, 3)`, *optional*):
             The temporal, height and width of feature shape of each video in LLM.
         rope_deltas (`torch.LongTensor` of shape `(batch_size, )`, *optional*):

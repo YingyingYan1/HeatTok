@@ -232,9 +232,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
             # If dimension exceeds, truncate to head_dim
             rope_center_weight = rope_center_weight[:head_dim]
             rope_extent_weight = rope_extent_weight[:head_dim]
-        # Expand to head_dim*2 to match center_emb and extent_emb dimensions
-        rope_center_weight = torch.cat([rope_center_weight, rope_center_weight])
-        rope_extent_weight = torch.cat([rope_extent_weight, rope_extent_weight])
         self.register_buffer(
             "rope_center_weight",
             rope_center_weight,
@@ -275,13 +272,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
                 if patch_extents.dtype != torch.long:
                     patch_extents = patch_extents.long()
                 patch_extents = patch_extents.to(self.rotary_pos_emb.inv_freq.device)
-                if not getattr(self, "_extent_debug_printed", False):
-                    self._extent_debug_printed = True
-                    print(
-                        "[MRoPE Debug] (Modular) Using semantic center+scale position encoding, examples:",
-                        patch_positions[:3].tolist(),
-                        patch_extents[:3].tolist(),
-                    )
             
             # G-MRoPE with orientation: Apply orientation rotation R(φk), then apply frequency rotation R(ωm)
             # P(c)_km = R(ωm) * R(φk) * μk, P(e)_km = R(ωm) * R(φk) * σk
@@ -295,17 +285,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
                 patch_orientations = patch_orientations.to(patch_positions.device)
                 if patch_orientations.shape[0] != patch_positions.shape[0]:
                     raise ValueError(f"patch_orientations shape {patch_orientations.shape} must match patch_positions shape {patch_positions.shape}")
-                
-                # Debug: Count tokens with/without orientation
-                num_with_orientation = (torch.abs(patch_orientations) > 1e-6).sum().item()
-                num_zero_orientation = patch_orientations.shape[0] - num_with_orientation
-                # Debug prints disabled by default
-                # if not getattr(self, "_orientation_encoding_debug_printed", False):
-                #     self._orientation_encoding_debug_printed = True
-                #     print(f"[G-MRoPE Orientation] Applying orientation-aware encoding:")
-                #     print(f"  - {num_zero_orientation} tokens with phi=0 (global tokens -> regular grid encoding, R(wm) only)")
-                #     print(f"  - {num_with_orientation} tokens with phi!=0 (semantic tokens -> Gaussian+orientation encoding, R(wm)*R(phik))")
-                #     print(f"[G-MRoPE Orientation] Position encoding types are correctly separated (not mixed)")
                 
                 # Convert quantized positions back to normalized coordinates [0, 1]
                 POSITION_QUANTIZATION = 4096  # Consistent with the value in _quantize_position
@@ -454,18 +433,8 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
                 raise ValueError("patch_positions must have shape (seq_len, 2)")
             if patch_positions_tensor.shape[0] != hidden_states.shape[0]:
                 raise ValueError("patch_positions must align with pixel patch tokens")
-            if getattr(self, "_debug_print_once", False) is False:
-                self._debug_print_once = True
-                print(
-                    "[Qwen2.5-Vision-Modular] Using semantic patch positions for rotary embedding.",
-                    "patch_positions shape:",
-                    patch_positions_tensor.shape,
-                )
         else:
             patch_positions_tensor = None
-            if getattr(self, "_debug_print_once_none", False) is False:
-                self._debug_print_once_none = True
-                print("[Qwen2.5-Vision-Modular] No semantic patch positions provided; using default grid positions.")
 
         if patch_extents is not None:
             patch_extents_tensor = patch_extents.to(hidden_states.device)
@@ -482,13 +451,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
                 raise ValueError("patch_orientations must have shape (seq_len,)")
             if patch_positions_tensor is not None and patch_orientations_tensor.shape[0] != patch_positions_tensor.shape[0]:
                 raise ValueError("patch_orientations must align with patch_positions")
-            if getattr(self, "_orientation_debug_printed", False) is False:
-                self._orientation_debug_printed = True
-                print(
-                    "[Qwen2.5-Vision-Modular] Using orientation-aware G-MRoPE.",
-                    f"patch_orientations shape: {patch_orientations_tensor.shape}, "
-                    f"range: [{patch_orientations_tensor.min().item():.3f}, {patch_orientations_tensor.max().item():.3f}]"
-                )
         else:
             patch_orientations_tensor = None
 
@@ -523,13 +485,6 @@ class Qwen2_5_VisionTransformerPretrainedModel(Qwen2_5_VLPreTrainedModel):
             extent_emb = torch.cat((rotary_extent, rotary_extent), dim=-1)
             weight_center = self.rope_center_weight.to(center_emb.device, dtype=center_emb.dtype).unsqueeze(0)
             weight_extent = self.rope_extent_weight.to(center_emb.device, dtype=center_emb.dtype).unsqueeze(0)
-            if not getattr(self, "_extent_weight_debug_printed", False):
-                self._extent_weight_debug_printed = True
-                print(
-                    "[MRoPE Debug] (Modular) Ȩ��ʾ�� (ǰ8ά):",
-                    weight_center[0, :8].tolist(),
-                    weight_extent[0, :8].tolist(),
-                )
             position_embeddings = (
                 center_emb.cos() * weight_center + extent_emb.cos() * weight_extent,
                 center_emb.sin() * weight_center + extent_emb.sin() * weight_extent,

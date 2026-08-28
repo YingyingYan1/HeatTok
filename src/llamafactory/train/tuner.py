@@ -28,12 +28,6 @@ from ..extras.packages import is_mcore_adapter_available, is_ray_available
 from ..hparams import get_infer_args, get_ray_args, get_train_args, read_args
 from ..model import load_model, load_tokenizer
 from .callbacks import LogCallback, PissaConvertCallback, ReporterCallback
-from .dpo import run_dpo
-from .kto import run_kto
-from .ppo import run_ppo
-from .pt import run_pt
-from .rm import run_rm
-from .sft import run_sft
 from .trainer_utils import get_ray_trainer, get_swanlab_callback
 
 
@@ -79,16 +73,28 @@ def _training_function(config: dict[str, Any]) -> None:
             from .mca import run_dpo as run_dpo_mca
             run_dpo_mca(model_args, data_args, training_args, finetuning_args, callbacks)
     elif finetuning_args.stage == "pt":
+        from .pt import run_pt
+
         run_pt(model_args, data_args, training_args, finetuning_args, callbacks)
     elif finetuning_args.stage == "sft":
+        from .sft import run_sft
+
         run_sft(model_args, data_args, training_args, finetuning_args, generating_args, callbacks)
     elif finetuning_args.stage == "rm":
+        from .rm import run_rm
+
         run_rm(model_args, data_args, training_args, finetuning_args, callbacks)
     elif finetuning_args.stage == "ppo":
+        from .ppo import run_ppo
+
         run_ppo(model_args, data_args, training_args, finetuning_args, generating_args, callbacks)
     elif finetuning_args.stage == "dpo":
+        from .dpo import run_dpo
+
         run_dpo(model_args, data_args, training_args, finetuning_args, callbacks)
     elif finetuning_args.stage == "kto":
+        from .kto import run_kto
+
         run_kto(model_args, data_args, training_args, finetuning_args, callbacks)
     else:
         raise ValueError(f"Unknown task: {finetuning_args.stage}.")

@@ -140,7 +140,7 @@ class DataArguments:
     # English comment.
     use_semantic_patches: bool = field(
         default=False,
-        metadata={"help": "Whether to use semantic patches (FastSAM + heat diffusion) instead of regular tiles."},
+        metadata={"help": "Whether to use semantic patches (SAM/FastSAM + heat diffusion) instead of regular tiles."},
     )
     global_downsample: bool = field(
         default=True,
@@ -152,7 +152,15 @@ class DataArguments:
     )
     sam_checkpoint: Optional[str] = field(
         default=None,
-        metadata={"help": "Path to FastSAM checkpoint (e.g. FastSAM-x.pt). Required if use_semantic_patches=True."},
+        metadata={"help": "Path to segmentation checkpoint. SAM example: sam_vit_h_4b8939.pth; FastSAM example: FastSAM-x.pt."},
+    )
+    sam_model_type: str = field(
+        default="vit_h",
+        metadata={"help": "SAM model type when sam_backend=sam (e.g. vit_h, vit_l, vit_b)."},
+    )
+    sam_backend: str = field(
+        default="fastsam",
+        metadata={"help": "Segmentation backend for semantic patches: fastsam (default), sam, or auto."},
     )
 
     def __post_init__(self):

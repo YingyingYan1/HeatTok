@@ -26,12 +26,6 @@ _SEMANTIC_PATCH_CACHE: dict[tuple, dict] = {}
 _CACHE_DIR = os.path.join(_base_dir, "semantic_patch_cache")
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
-_SEMANTIC_PROGRESS = {
-    "count": 0,
-    "accumulated": 0.0,
-    "start_time": None,
-    "total": float(os.getenv("SAM_HEAT_TOTAL_IMAGES", "0") or 0),
-}
 
 # Global flag to track if orientation debug message has been printed (for multi-process safety)
 _ORIENTATION_DEBUG_PRINTED = False
@@ -43,7 +37,7 @@ _ENABLE_DEBUG_PRINTS = os.environ.get("HEATTOK_DEBUG", "0").strip().lower() in (
 _HEATTOK_CACHE_DEBUG = os.environ.get("HEATTOK_CACHE_DEBUG", "0").strip().lower() in ("1", "true")
 
 # English comment.
-_HEATTOK_QUIET = os.environ.get("HEATTOK_QUIET", "0").strip().lower() in ("1", "true")
+_HEATTOK_QUIET = os.environ.get("HEATTOK_QUIET", "1").strip().lower() not in ("0", "false")
 
 
 def _quantize_position(y_norm: float, x_norm: float) -> list[int]:
@@ -448,26 +442,6 @@ def _replace_cached_global_with_online(
     return merged
 
 
-def _update_semantic_progress(elapsed_seconds: float) -> None:
-    if elapsed_seconds <= 0:
-        return
-    if _SEMANTIC_PROGRESS["start_time"] is None:
-        _SEMANTIC_PROGRESS["start_time"] = time.perf_counter()
-    _SEMANTIC_PROGRESS["count"] += 1
-    _SEMANTIC_PROGRESS["accumulated"] += elapsed_seconds
-    count = _SEMANTIC_PROGRESS["count"]
-    avg = _SEMANTIC_PROGRESS["accumulated"] / count
-    total = _SEMANTIC_PROGRESS["total"]
-    message = (
-        f"[SemanticPatch Progress] Processed {count} images, avg {avg:.2f}s"
-    )
-    if total > 0 and count < total:
-        remaining = max(total - count, 0)
-        eta = remaining * avg
-        message += f", remaining {remaining:.0f} images, ETA {eta/60:.1f} min"
-    print(message)
-
-
 def load_sam_heat_module():
     """Load 4heat_sam_chicun.py module"""
     # Check if file exists
@@ -519,7 +493,6 @@ def process_image_with_semantic_patches(
         print("Warning: SAM model not available, using tiles")
         return process_image_with_regular_tiles(image, image_processor, global_downsample)
     
-    import tempfile
     import hashlib
     import os
     import torch
@@ -547,9 +520,12 @@ def process_image_with_semantic_patches(
     env_tmp_root = os.getenv("SAM_HEAT_TMP_DIR")
     if env_tmp_root:
         tmp_dir = os.path.join(env_tmp_root, f"semantic_patches_{process_id}")
+        os.makedirs(tmp_dir, exist_ok=True)
     else:
-        tmp_dir = os.path.join(_CACHE_DIR, "tmp", f"semantic_patches_{process_id}")
-    os.makedirs(tmp_dir, exist_ok=True)
+        # Use system temp; do not write visualization under semantic_patch_cache/.
+        import tempfile
+
+        tmp_dir = tempfile.mkdtemp(prefix=f"semantic_patches_{process_id}_")
     tmp_path = os.path.join(tmp_dir, f"temp_image_{image_hash}.png")
 
     cache_key = (
@@ -668,8 +644,6 @@ def process_image_with_semantic_patches(
             disk_cached = _replace_cached_global_with_online(disk_cached, image, image_processor, global_downsample)
             return disk_cached
 
-    pipeline_start = time.perf_counter()
-
     # English comment.
     if not os.path.exists(tmp_path):
         image.save(tmp_path)
@@ -721,24 +695,27 @@ def process_image_with_semantic_patches(
         
         # English comment.
         if merge_params is None:
-            # HeatTok paper Optimal (Ours): κ0=1.0, σC=5.0, σT=5.0, α=0.5, τm=0.03
             merge_params = {
                 'sam_morph_kernel': 5,
                 'min_size_threshold': 50,
-                'post_min_size_threshold': 200,
-                'post_max_size_threshold': 6000,
-                'target_split_size': 1000,
+                'post_min_size_threshold': 500,
+                'post_max_size_threshold': 40000,
+                'target_split_size': 15000,
                 'sigma_T': 5.0,
                 'sigma_C': 5.0,
                 'alpha': 0.5,
-                'K0': 1.0,
+                'K0': 0.5,
                 'delta_t': 0.001,
                 'diffusion_iterations': 30,
-                'merge_threshold': 0.03,
+                'merge_threshold': 0.01,
+                'save_visualization': False,
             }
         
         # English comment.
         merge_params['target_size'] = semantic_patch_size
+        # Cache path: only keep .pt files; disable tmp visualization outputs.
+        merge_params['save_visualization'] = False
+        merge_params.pop('patch_output_dir', None)
         
         # Run SAM + merge pipeline
         patches_tensor, positions_tensor, gaussian_tensor = processor.run_sam_and_merge(**merge_params)
@@ -780,10 +757,9 @@ def process_image_with_semantic_patches(
             tmp_cache_path = os.path.join(_CACHE_DIR, f".{cache_name}.{os.getpid()}.tmp")
             torch.save(disk_payload, tmp_cache_path)
             os.replace(tmp_cache_path, cache_path)
+            print(f"[HeatTok] Saved cache: {cache_name}")
         except Exception as save_err:
             print(f"Error: Failed to save cached patch ({cache_path}): {save_err}")
-        if pipeline_start is not None:
-            _update_semantic_progress(time.perf_counter() - pipeline_start)
         return {k: (v.clone() if isinstance(v, torch.Tensor) else v) for k, v in cached_result.items()}
     
     except Exception as e:
@@ -793,21 +769,19 @@ def process_image_with_semantic_patches(
         return process_image_with_regular_tiles(image, image_processor, global_downsample)
     
     finally:
-        # English comment.
-        # English comment.
-        # English comment.
+        # Remove temporary workspace; keep only .pt under semantic_patch_cache/.
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
         except Exception:
-            pass  # English comment.
+            pass
+        try:
+            import shutil
 
-        if not env_tmp_root:
-            try:
-                if os.path.isdir(tmp_dir) and not os.listdir(tmp_dir):
-                    os.rmdir(tmp_dir)
-            except Exception:
-                pass
+            if os.path.isdir(tmp_dir):
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def convert_semantic_patches_to_qwen2vl_format(
@@ -852,10 +826,6 @@ def convert_semantic_patches_to_qwen2vl_format(
         last_patch = semantic_patches_list[-1]
         for _ in range(padding_needed):
             semantic_patches_list.append(last_patch.copy())
-        print(
-            f"[Token Alignment] Padded {padding_needed} patches to align with merge_square={merge_square} "
-            f"(original: {num_patches}, aligned: {len(semantic_patches_list)})"
-        )
 
     # English comment.
     new_pixel_values = []
@@ -1020,13 +990,6 @@ def convert_semantic_patches_to_qwen2vl_format(
     gaussian_np = None
     if gaussian_params_tensor is not None and gaussian_params_tensor.numel() != 0:
         gaussian_np = gaussian_params_tensor.detach().cpu().numpy()
-        if not hasattr(convert_semantic_patches_to_qwen2vl_format, "_gaussian_debug_printed"):
-            convert_semantic_patches_to_qwen2vl_format._gaussian_debug_printed = True
-            if not _HEATTOK_QUIET:
-                mu_x_preview = gaussian_np[:, 0]
-                mu_y_preview = gaussian_np[:, 1]
-                preview_centers = np.stack([mu_y_preview, mu_x_preview], axis=1)
-                print("[Gaussian Debug] first centers (mu_y, mu_x):", preview_centers[:5])
 
     centers_np = None
     extents_np = None
@@ -1046,11 +1009,6 @@ def convert_semantic_patches_to_qwen2vl_format(
         extent_x_norm = np.clip((2.0 * sigma_x) / safe_width, 0.0, 1.0)
         extent_y_norm = np.clip((2.0 * sigma_y) / safe_height, 0.0, 1.0)
         extents_np = np.stack([extent_y_norm, extent_x_norm], axis=1)
-        
-        if not hasattr(convert_semantic_patches_to_qwen2vl_format, "_orientation_debug_printed"):
-            convert_semantic_patches_to_qwen2vl_format._orientation_debug_printed = True
-            if not _HEATTOK_QUIET:
-                print(f"[Orientation Debug] Extracted rho range: [{rho.min():.3f}, {rho.max():.3f}]")
     elif positions_tensor is not None and positions_tensor.numel() != 0:
         centers_np = positions_tensor.detach().cpu().numpy()
 
@@ -1206,14 +1164,6 @@ def convert_semantic_patches_to_qwen2vl_format(
                     orientation_angles_list = orientation_angles_list[:target_len]
             result["patch_orientations"] = torch.tensor(orientation_angles_list, dtype=torch.float32)
 
-    if not hasattr(convert_semantic_patches_to_qwen2vl_format, "_grid_debug_printed"):
-        convert_semantic_patches_to_qwen2vl_format._grid_debug_printed = True
-        if not _HEATTOK_QUIET:
-            prod_tokens = (image_grid_thw_tensor.prod(-1)).numpy()
-            merged_tokens = prod_tokens // (image_processor.merge_size ** 2 if hasattr(image_processor, "merge_size") else 4)
-            print("[Grid Debug] grid entries (first 10):", image_grid_thw_tensor[:10])
-            print("[Grid Debug] pre-merge tokens sum:", prod_tokens.sum(), "post-merge tokens sum:", merged_tokens.sum())
-
     # English comment.
     pixel_count = result["pixel_values"].shape[0]
     if "patch_positions" in result and result["patch_positions"].shape[0] != pixel_count:
@@ -1231,6 +1181,19 @@ def convert_semantic_patches_to_qwen2vl_format(
             f"[SelfCheck] patch_orientations length ({result['patch_orientations'].shape[0]}) "
             f"!= pixel_values length ({pixel_count})"
         )
+
+    # LLM-side token counts (after merge_size aggregation).
+    merge_size = getattr(image_processor, "merge_size", 2)
+    merge_square = max(int(merge_size) ** 2, 1)
+    num_global_tokens = 0
+    if global_downsample and outputs_global is not None:
+        global_grid_thw = outputs_global["image_grid_thw"].numpy()
+        for grid_t, grid_h, grid_w in global_grid_thw:
+            num_global_tokens += int(grid_t) * max(int(grid_h), 1) * max(int(grid_w), 1)
+    num_global_tokens = num_global_tokens // merge_square
+    num_semantic_tokens = max(pixel_count // merge_square - num_global_tokens, 0)
+    result["num_global_tokens"] = int(num_global_tokens)
+    result["num_semantic_tokens"] = int(num_semantic_tokens)
 
     return result
 

@@ -29,8 +29,11 @@ sys.path.insert(0, str(project_root / "src"))
 import yaml
 import torch
 from PIL import Image
-from tqdm import tqdm
+from functools import partial
+from tqdm import tqdm as _tqdm
 from transformers import Qwen2VLImageProcessor
+
+tqdm = partial(_tqdm, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}")
 
 
 def load_yaml_config(config_path: str) -> dict:
@@ -246,6 +249,8 @@ def main():
     semantic_patch_size = config.get("semantic_patch_size", 32)
     global_downsample = config.get("global_downsample", False)
     sam_checkpoint = config.get("sam_checkpoint")
+    sam_model_type = config.get("sam_model_type", "vit_h")
+    sam_backend = config.get("sam_backend", "fastsam")
     model_name_or_path = config.get("model_name_or_path")
     max_samples_config = config.get("max_samples")
 
@@ -256,6 +261,8 @@ def main():
     print(f"[Config] semantic_patch_size: {semantic_patch_size}")
     print(f"[Config] global_downsample: {global_downsample}")
     print(f"[Config] sam_checkpoint: {sam_checkpoint}")
+    print(f"[Config] sam_backend: {sam_backend}")
+    print(f"[Config] sam_model_type: {sam_model_type}")
 
     # 3. Configure GPU (if gpu_id is provided)
     if args.gpu_id is not None:
@@ -282,27 +289,29 @@ def main():
         except Exception as e:
             print(f"[Warning] Failed to set CUDA device {device_id}: {e}")
 
-    # 4. Initialize FastSAM
+    # 4. Initialize segmentation model (SAM / FastSAM)
     sam_model_raw = None
     sam_model_dataparallel = None
     mask_generator = None
     
     if sam_checkpoint and os.path.exists(sam_checkpoint):
-        print(f"\n[FastSAM] Loading from: {sam_checkpoint}")
+        print(f"\n[{sam_backend.upper()}] Loading from: {sam_checkpoint}")
         from llamafactory.utils.sam_model_loader import load_sam_model
         
         sam_model_raw, sam_model_dataparallel, mask_generator = load_sam_model(
             sam_checkpoint=sam_checkpoint,
+            model_type=sam_model_type,
+            sam_backend=sam_backend,
             device_id=device_id,
         )
         
         if sam_model_raw is not None:
-            print(f"[FastSAM] Loaded successfully")
+            print(f"[{sam_backend.upper()}] Loaded successfully")
         else:
-            print(f"[Warning] FastSAM failed to load")
+            print(f"[Warning] {sam_backend.upper()} failed to load")
             print(f"[Warning] Will use regular tiles instead of semantic patches")
     else:
-        print(f"[Warning] FastSAM checkpoint not found: {sam_checkpoint}")
+        print(f"[Warning] Segmentation checkpoint not found: {sam_checkpoint}")
         print(f"[Warning] Will use regular tiles instead of semantic patches")
 
     # 5. Initialize ImageProcessor (without loading the full model)

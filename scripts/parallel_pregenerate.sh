@@ -38,9 +38,7 @@ echo ""
 LOG_DIR="logs/pregenerate_cache"
 mkdir -p "$LOG_DIR"
 
-# Record start time
-START_TIME=$(date +%s)
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting parallel cache pregeneration..."
+echo "Starting parallel cache pregeneration..."
 
 # Launch one worker process per GPU shard
 for gpu_id in $(seq 0 $((NUM_GPUS-1))); do
@@ -68,17 +66,9 @@ echo "Waiting for all tasks to finish..."
 # Wait for all background jobs
 wait
 
-# Compute elapsed time
-END_TIME=$(date +%s)
-ELAPSED=$((END_TIME - START_TIME))
-HOURS=$((ELAPSED / 3600))
-MINUTES=$(((ELAPSED % 3600) / 60))
-SECONDS=$((ELAPSED % 60))
-
 echo ""
 echo "========================================"
 echo "All pregeneration tasks completed!"
-echo "Total elapsed time: ${HOURS}h ${MINUTES}m ${SECONDS}s"
 echo "========================================"
 echo ""
 echo "Per-GPU summary:"

@@ -299,6 +299,8 @@ def get_dataset(
             device_id = torch.cuda.current_device() if torch.cuda.is_available() else 0
             sam_model_raw, sam_model_dataparallel, mask_generator = load_sam_model(
                 sam_checkpoint=getattr(data_args, "sam_checkpoint", None),
+                model_type=getattr(data_args, "sam_model_type", "vit_h"),
+                sam_backend=getattr(data_args, "sam_backend", "fastsam"),
                 device_id=device_id,
             )
             
@@ -306,11 +308,11 @@ def get_dataset(
                 setattr(processor, "_sam_model_raw", sam_model_raw)
                 setattr(processor, "_sam_model_dataparallel", sam_model_dataparallel)
                 setattr(processor, "_mask_generator", mask_generator)
-                logger.info_rank0("FastSAM model loaded into processor")
+                logger.info_rank0("Segmentation backend model loaded into processor")
             else:
-                logger.warning_rank0("FastSAM model loading failed; falling back to the original image processing path")
+                logger.warning_rank0("Segmentation backend loading failed; falling back to the original image processing path")
         except Exception as e:
-            logger.warning_rank0(f"FastSAM model initialization failed: {e}; falling back to the original image processing path")
+            logger.warning_rank0(f"Segmentation backend initialization failed: {e}; falling back to the original image processing path")
     
     # Load tokenized dataset if path exists
     if data_args.tokenized_path is not None:
