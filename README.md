@@ -78,47 +78,29 @@ pip install -r requirements.txt
 
 This is a quick one-shot setup option. For CUDA-sensitive packages (e.g., PyTorch, `torch-scatter`, `flash-attn`), the step-by-step installation below is still recommended.
 
-### 1. Create Conda Environment
-
 ```bash
+# [1] Create conda environment
 conda create -n heatok python=3.11 -y
 conda activate heatok
-```
 
-### 2. Install PyTorch (CUDA 11.8 example)
-
-```bash
+# [2] Install PyTorch (CUDA 11.8 example)
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
   --index-url https://download.pytorch.org/whl/cu118
-```
 
-### 3. Install LLaMA-Factory
-
-```bash
+# [3] Install LLaMA-Factory
 pip install -e .
-```
 
-### 4. Install FastSAM Dependencies
-
-
-```bash
+# [4] Install FastSAM dependencies
 pip install opencv-python pillow tqdm seaborn scikit-learn scikit-image
-```
 
-### 5. Install HeatTok Additional Dependencies
-
-```bash
+# [5] Install HeatTok additional dependencies
 pip install torch-scatter -f https://data.pyg.org/whl/torch-2.4.0+cu118.html
-pip install flash-attn --no-build-isolation   
-pip install deepspeed                          
+pip install flash-attn --no-build-isolation
+pip install deepspeed
 
-### 6. Meta SAM (Optional)
-
-If you want to use Meta SAM instead of FastSAM:
-
-```bash
-cd segment-anything-main
-pip install -e .
+# [6] Optional: use Meta SAM instead of FastSAM
+# cd segment-anything-main
+# pip install -e .
 ```
 
 
