@@ -22,7 +22,7 @@ Northwestern Polytechnical University, Hong Kong University of Science and Techn
 
 <a href="https://github.com/YingyingYan1/HeatTok"><img src="https://img.shields.io/badge/Code-GitHub-111111"></a>
 <a href="https://arxiv.org/abs/2608.22485"><img src="https://img.shields.io/badge/cs.CV-Paper-b31b1b?style=flat&logo=arxiv&logoColor=white"></a>
-<a href="#models"><img src="https://img.shields.io/badge/Model-Hugging%20Face-facc15"></a>
+<a href="https://huggingface.co/Yingying11/HeatTok-EarthVQA-7B"><img src="https://img.shields.io/badge/Model-Hugging%20Face-facc15"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg"></a>
 
 Official repository for **HeatTok**.
@@ -33,7 +33,7 @@ Official repository for **HeatTok**.
 
 ## 📰 News
 
-- [2026.08] [Code](https://github.com/YingyingYan1/HeatTok) released.
+- [2026.08] [Code](https://github.com/YingyingYan1/HeatTok) released; [Models](https://huggingface.co/Yingying11/HeatTok-VRSBench-7B) and [Datasets](https://huggingface.co/datasets/Yingying11/semantic_patch_cache) released on Hugging Face.
 - [2026.08] [Paper](https://arxiv.org/abs/2608.22485) released on arXiv.
 - [2026.07] 🎉 HeatTok was accepted by ACM MM 2026!
 
@@ -80,8 +80,8 @@ This is a quick one-shot setup option. For CUDA-sensitive packages (e.g., PyTorc
 
 ```bash
 # [1] Create conda environment
-conda create -n heatok python=3.11 -y
-conda activate heatok
+conda create -n heatTok python=3.11 -y
+conda activate heatTok
 
 # [2] Install PyTorch (CUDA 11.8 example)
 pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
@@ -106,12 +106,12 @@ pip install deepspeed
 
 ## 🤖 Models
 
-| Model | Dataset | Checkpoint |
-|:------|:--------|:-----------|
-| HeatTok-Qwen2.5-VL-7B | VRSBench | [Download]() |
-| HeatTok-Qwen2.5-VL-7B | EarthVQA | [Download]() |
+| Model | Checkpoint |
+|:------|:-----------|
+| [HeatTok-VRSBench-7B](https://huggingface.co/Yingying11/HeatTok-VRSBench-7B) | [Download](https://huggingface.co/Yingying11/HeatTok-VRSBench-7B) |
+| [HeatTok-EarthVQA-7B](https://huggingface.co/Yingying11/HeatTok-EarthVQA-7B) | [Download](https://huggingface.co/Yingying11/HeatTok-EarthVQA-7B) |
 
-> Model weights will be released soon.
+
 
 ---
 
@@ -163,6 +163,8 @@ Cache files are saved to `src/semantic_patch_cache/` with the naming format:
 {image_hash}_g{0|1}_gd{8}_s{semantic_patch_size}.pt
 ```
 
+Download: [data](https://huggingface.co/datasets/Yingying11/semantic_patch_cache).
+
 ---
 
 ## 🚀 Training
@@ -198,7 +200,21 @@ llamafactory-cli train examples/train_lora/qwen2_5vl_lora_sft.yaml
 
 ## 📊 Evaluation
 
-Evaluation code will be uploaded soon.
+### EarthVQA
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+torchrun --nproc_per_node=8 val/valearthvqa.py
+```
+
+### VRSBench
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
+torchrun --nproc_per_node=8 val/valvrsbench.py
+```
+
+
 
 ## 🎨 Quick Visualization
 
