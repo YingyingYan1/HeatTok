@@ -81,7 +81,6 @@ Different datasets usually need different parameter settings; please tune them f
 
 ## Notes
 
-- `.pt` files in this directory can be large and are usually not committed to version control.
 - If cache files are deleted, they will be recomputed during the next training/pregeneration run.
 - Changing heat-diffusion parameters usually requires regenerating the corresponding cache files.
 
