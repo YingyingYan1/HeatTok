@@ -140,7 +140,7 @@ ENFORCE_CATEGORY_ONLY_PROMPT = (TASK_MODE == "category")
 SEMANTIC_CACHE_DIR = _PROJECT_ROOT / "src/semantic_patch_cache"
 os.environ.setdefault("HEATTOK_SEMANTIC_CACHE_DIR", str(SEMANTIC_CACHE_DIR))
 SEMANTIC_GLOBAL_DOWNSAMPLE = True  # g1: global branch enabled
-GLOBAL_DOWNSAMPLE_DIVISOR = 8  # gd1: full-resolution global branch (not gd8)
+GLOBAL_DOWNSAMPLE_DIVISOR = 1  # gd1,gd8
 SEMANTIC_PATCH_SIZE = 28
 SEMANTIC_IMAGE_MAX_PIXELS = 1024 * 1024  # 1048576, EarthVQA training resolution
 SEMANTIC_IMAGE_MIN_PIXELS = 32 * 32
