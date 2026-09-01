@@ -108,7 +108,6 @@ pip install deepspeed
 
 | Model | Checkpoint |
 |:------|:-----------|
-| [HeatTok-VRSBench-7B](https://huggingface.co/Yingying11/HeatTok-VRSBench-7B) | [Download](https://huggingface.co/Yingying11/HeatTok-VRSBench-7B) |
 | [HeatTok-EarthVQA-7B](https://huggingface.co/Yingying11/HeatTok-EarthVQA-7B) | [Download](https://huggingface.co/Yingying11/HeatTok-EarthVQA-7B) |
 
 
