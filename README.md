@@ -33,7 +33,7 @@ Official repository for **HeatTok**.
 
 ## 📰 News
 
-- [2026.08] [Code](https://github.com/YingyingYan1/HeatTok) released; [Models](https://huggingface.co/Yingying11/HeatTok-VRSBench-7B) and [Datasets](https://huggingface.co/datasets/Yingying11/semantic_patch_cache) released on Hugging Face.
+- [2026.08] [Code](https://github.com/YingyingYan1/HeatTok) released; [Models](https://huggingface.co/Yingying11/HeatTok-EarthVQA-7B) and [Datasets](https://huggingface.co/datasets/Yingying11/semantic_patch_cache) released on Hugging Face.
 - [2026.08] [Paper](https://arxiv.org/abs/2608.22485) released on arXiv.
 - [2026.07] 🎉 HeatTok was accepted by ACM MM 2026!
 
